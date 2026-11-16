@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 env:
-  CONN3X_VERSION: 0.20.0
+  CONN3X_VERSION: 0.21.0
 
 jobs:
   test:
