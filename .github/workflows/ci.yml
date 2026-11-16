@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # The examples pin circuit releases, but package mirrors and upstream
+  # downloads move under them. A weekly run catches that.
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  CONN3X_VERSION: 0.20.0
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [web-server, web-and-postgres, monitoring, private-ai-box, secure-homelab]
+    name: test (${{ matrix.project }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Conn3x
+        run: |
+          file="conn3x_${CONN3X_VERSION}_linux_amd64.tar.gz"
+          base="https://github.com/conn3xorg/conn3x/releases/download/v${CONN3X_VERSION}"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$base/$file" -O "$base/checksums.txt"
+          grep " $file\$" checksums.txt | sha256sum -c -
+          mkdir -p bin && tar -xzf "$file" -C bin conn3x
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: conn3x version
+      - run: podman --version
+      - name: Check formatting
+        working-directory: ${{ matrix.project }}
+        run: conn3x fmt -check -recursive
+      # conn3x test starts a container from tests/setup, applies the
+      # project to it, checks the second plan is empty, then removes it.
+      - name: Test
+        working-directory: ${{ matrix.project }}
+        run: |
+          conn3x init
+          conn3x test
+      - name: Remove leftover test containers
+        if: always()
+        run: podman ps -aq --filter label=io.conn3x.test-container=true | xargs -r podman rm -f
